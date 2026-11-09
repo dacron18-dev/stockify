@@ -45,6 +45,21 @@ export default function Admin({ session, profile, onLogout }) {
     market.reload();
   }
 
+  async function refreshNow() {
+    setMsg(null);
+    try {
+      const { data } = await supabase.auth.getSession();
+      const r = await fetch("/api/update-prices?force=1", { headers: { Authorization: "Bearer " + data.session.access_token } });
+      const text = await r.text();
+      let j;
+      try { j = JSON.parse(text); } catch { return bad("The price function was not found. It only exists on the deployed Vercel site, not in npm run dev."); }
+      if (!r.ok) return bad(j.error || "Refresh failed");
+      if (j.errors && j.errors.length) bad(`Updated ${j.updated} stock(s). Problems: ${j.errors.join("; ")}`);
+      else ok(`Updated ${j.updated} stock(s) from ${j.provider}` + (j.matches && j.matches.length ? `. Matched: ${j.matches.join("; ")}` : ""));
+      market.reload();
+    } catch (e) { bad(e.message); }
+  }
+
   async function saveSetting(patch) {
     const { error } = await supabase.from("settings").update(patch).eq("id", 1);
     if (error) bad(error.message); else market.reload();
@@ -256,6 +271,10 @@ export default function Admin({ session, profile, onLogout }) {
             <button className={live ? "on" : ""} onClick={() => saveSetting({ price_source: "live" })}>Live API</button>
           </div>
           <p className="muted small">Live API needs the server function configured (see README). While someone is using the app, prices refresh from your provider automatically.</p>
+          <div className="row">
+            <button className="primary" onClick={refreshNow}>Refresh prices now</button>
+            <span className="muted small">Fetches real prices once and shows the result, handy for testing. Works in any price mode.</span>
+          </div>
         </section>
       )}
     </div>

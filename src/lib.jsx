@@ -65,7 +65,7 @@ export function useMarket() {
         clearTimeout(timer.current); timer.current = setTimeout(load, 300);
       })
       .subscribe();
-    const poll = setInterval(load, 10000); // safety net if realtime drops
+    const poll = setInterval(load, 30000); // safety net if realtime drops
     return () => { supabase.removeChannel(ch); clearInterval(poll); clearTimeout(timer.current); };
   }, [load]);
 

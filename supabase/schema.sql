@@ -100,12 +100,32 @@ create trigger on_auth_user_created after insert on auth.users
 -- ---------- log every price change (for charts) ----------
 create or replace function log_price() returns trigger language plpgsql security definer set search_path = public as $body$
 begin
-  if tg_op = 'INSERT' or new.price is distinct from old.price then
+  if tg_op = 'INSERT' then
     insert into price_history (symbol, price) values (new.symbol, new.price);
+  elsif new.price is distinct from old.price then
+    -- keep at most one chart point per stock every 20 seconds (keeps the database small)
+    if not exists (select 1 from price_history where symbol = new.symbol and ts > now() - interval '20 seconds') then
+      insert into price_history (symbol, price) values (new.symbol, new.price);
+    end if;
   end if;
   return new;
 end
 $body$;
+
+-- delete old chart points (keeps the newest point of every stock). Admins can call it, or run it in the SQL editor.
+create or replace function prune_price_history(p_days int default 7) returns bigint language plpgsql security definer set search_path = public as $body$
+declare n bigint;
+begin
+  if auth.uid() is not null and not is_admin() then raise exception 'Admins only'; end if;
+  delete from price_history
+   where ts < now() - make_interval(days => p_days)
+     and id not in (select max(id) from price_history group by symbol);
+  get diagnostics n = row_count;
+  return n;
+end
+$body$;
+revoke all on function prune_price_history(int) from public, anon;
+grant execute on function prune_price_history(int) to authenticated;
 
 drop trigger if exists stocks_log_price on stocks;
 create trigger stocks_log_price after insert or update of price on stocks
